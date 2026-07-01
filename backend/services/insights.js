@@ -1,5 +1,7 @@
 // Treasury health score, activity feed shaping, and what-if rule simulation.
 
+import { listTransactions } from './circle.js';
+
 function walletTotals(walletRows) {
   let treasury = 0;
   let savings = 0;
@@ -112,11 +114,11 @@ export function buildActivityFeed({ transactions = [], pings = [] }) {
   for (const p of pings) {
     items.push({
       id: p.id,
-      kind: 'ping',
+      kind: p.kind === 'gm' || p.kind === 'gn' ? 'ping' : p.kind,
       source: 'wallet',
-      title: p.kind === 'gn' ? '🌙 GN on Arc' : '☀️ GM on Arc',
-      amount: '0.000001',
-      token: p.kind === 'gn' ? 'EURC' : 'USDC',
+      title: pingTitle(p),
+      amount: p.kind === 'deposit' || p.kind === 'withdraw' ? null : '0.000001',
+      token: p.kind === 'gn' ? 'EURC' : p.kind === 'gm' ? 'USDC' : null,
       status: 'confirmed',
       created_at: p.created_at,
       tx_hash: p.tx_hash || null,
@@ -124,8 +126,68 @@ export function buildActivityFeed({ transactions = [], pings = [] }) {
     });
   }
 
-  items.sort((a, b) => b.created_at - a.created_at);
-  return items.slice(0, 40);
+  return mergeActivityItems(items);
+}
+
+function pingTitle(p) {
+  switch (p.kind) {
+    case 'gn': return '🌙 GN on Arc';
+    case 'gm': return '☀️ GM on Arc';
+    case 'deposit': return 'Deposit to Treasury';
+    case 'withdraw': return 'Withdraw to personal wallet';
+    default: return `Wallet activity (${p.kind})`;
+  }
+}
+
+export async function fetchCircleActivity(wallets = []) {
+  const ARCSCAN_TX = 'https://testnet.arcscan.app/tx/';
+  const items = [];
+  for (const w of wallets) {
+    try {
+      const txs = await listTransactions({ walletId: w.circle_wallet_id, pageSize: 20 });
+      for (const t of txs) {
+        const ts = t.createDate ? new Date(t.createDate).getTime() : Date.now();
+        const amt = Array.isArray(t.amounts) ? t.amounts[0] : t.amount;
+        items.push({
+          id: `circle-${t.id}`,
+          kind: 'transfer',
+          source: w.label || 'treasury',
+          title: amt ? `Transfer ${amt} USDC` : `Transfer from ${w.label || 'wallet'}`,
+          status: String(t.state || 'submitted').toLowerCase(),
+          created_at: ts,
+          tx_hash: t.txHash || null,
+          explorer_url: t.txHash ? `${ARCSCAN_TX}${t.txHash}` : null,
+        });
+      }
+    } catch (err) {
+      console.error(`circle activity ${w.circle_wallet_id}:`, err.message);
+    }
+  }
+  return items;
+}
+
+export function mergeActivityItems(...lists) {
+  const byKey = new Map();
+  for (const item of lists.flat()) {
+    const key = item.tx_hash || item.id;
+    if (!key) continue;
+    const prev = byKey.get(key);
+    if (!prev || (item.created_at || 0) >= (prev.created_at || 0)) {
+      byKey.set(key, item);
+    }
+  }
+  return [...byKey.values()]
+    .sort((a, b) => (b.created_at || 0) - (a.created_at || 0))
+    .slice(0, 40);
+}
+
+export async function buildFullActivityFeed({ ownerAddress, getTransactions, getChainPings, getWallets }) {
+  const transactions = getTransactions(ownerAddress, { limit: 50 });
+  const pings = getChainPings(ownerAddress, { limit: 30 });
+  const dbItems = buildActivityFeed({ transactions, pings });
+  const wallets = getWallets(ownerAddress);
+  const circleItems = wallets.length ? await fetchCircleActivity(wallets) : [];
+  return mergeActivityItems(dbItems, circleItems);
 }
 
 function formatTxTitle(t) {

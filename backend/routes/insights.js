@@ -8,7 +8,8 @@ import {
   insertRule,
 } from '../db/database.js';
 import { getBalances } from '../services/circle.js';
-import { computeHealthScore, buildActivityFeed, runWhatIf } from '../services/insights.js';
+import { computeHealthScore, buildFullActivityFeed, runWhatIf } from '../services/insights.js';
+import { ensureWallets } from '../services/provision.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -40,9 +41,14 @@ router.get('/health', async (req, res) => {
 
 router.get('/activity', async (req, res) => {
   try {
-    const transactions = getTransactions(req.ownerAddress, { limit: 50 });
-    const pings = getChainPings(req.ownerAddress, { limit: 30 });
-    res.json({ items: buildActivityFeed({ transactions, pings }) });
+    await ensureWallets(req.ownerAddress);
+    const items = await buildFullActivityFeed({
+      ownerAddress: req.ownerAddress,
+      getTransactions,
+      getChainPings,
+      getWallets,
+    });
+    res.json({ items });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -50,8 +56,9 @@ router.get('/activity', async (req, res) => {
 
 router.post('/ping', (req, res) => {
   const { kind, tx_hash: txHash } = req.body ?? {};
-  if (!kind || !['gm', 'gn'].includes(kind)) {
-    return res.status(400).json({ error: 'kind must be gm or gn' });
+  const allowed = ['gm', 'gn', 'deposit', 'withdraw'];
+  if (!kind || !allowed.includes(kind)) {
+    return res.status(400).json({ error: `kind must be one of: ${allowed.join(', ')}` });
   }
   const id = uuid();
   insertChainPing({ id, ownerAddress: req.ownerAddress, kind, txHash });

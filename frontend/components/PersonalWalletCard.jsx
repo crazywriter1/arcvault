@@ -70,6 +70,7 @@ export default function PersonalWalletCard({ treasuryWallet, onTx }) {
       setStatus(`Submitted: ${tx.hash.slice(0, 10)}…`);
       await tx.wait();
       setStatus(`Deposit confirmed`);
+      api.logPing({ kind: 'deposit', tx_hash: tx.hash }).catch(() => {});
       setMode(null); setAmount('');
       fetchBalances();
       onTx?.();
