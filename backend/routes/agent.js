@@ -9,7 +9,7 @@ import {
   getTransactions,
 } from '../db/database.js';
 import { parseCommand, generateReport, isCompleteRuleParams, formatBalanceSummary, inferLocalIntent, normalizeAction } from '../services/ai.js';
-import { getBalances, transfer } from '../services/circle.js';
+import { getBalances, getRawBalances, findTokenBalance, transfer } from '../services/circle.js';
 import { quoteSwap, executeSwap } from '../services/swap.js';
 import { ensureWallets } from '../services/provision.js';
 import { getBurnSpec, CCTP_DOMAINS } from '../services/cctp.js';
@@ -155,8 +155,8 @@ router.post('/execute', chatLimiter, async (req, res) => {
         destAddress = destWallet.address;
       }
 
-      const balances = await getBalances(srcWallet.circle_wallet_id);
-      const tokEntry = balances.find(b => b.token?.symbol === token);
+      const balances = await getRawBalances(srcWallet.circle_wallet_id);
+      const tokEntry = findTokenBalance(balances, token, amount);
       if (!tokEntry) return res.status(400).json({ error: `no ${token} held in ${srcWallet.label}` });
 
       const txId = uuid();

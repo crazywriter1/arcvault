@@ -49,9 +49,53 @@ export async function getWallet(walletId) {
   return res.data?.wallet;
 }
 
-export async function getBalances(walletId) {
+export async function getRawBalances(walletId) {
   const res = await client.getWalletTokenBalance({ id: walletId });
   return res.data?.tokenBalances ?? [];
+}
+
+/** Circle may return duplicate rows per symbol (multiple token IDs). Merge for display. */
+export function mergeTokenBalances(balances = []) {
+  const seenIds = new Set();
+  const unique = balances.filter((b) => {
+    const id = b.token?.id;
+    if (!id) return true;
+    if (seenIds.has(id)) return false;
+    seenIds.add(id);
+    return true;
+  });
+
+  const bySymbol = new Map();
+  for (const b of unique) {
+    const sym = String(b.token?.symbol || '').toUpperCase();
+    if (!sym) continue;
+    const amt = parseFloat(b.amount ?? 0) || 0;
+    const cur = bySymbol.get(sym);
+    if (!cur) {
+      bySymbol.set(sym, { ...b, amount: String(amt) });
+      continue;
+    }
+    const total = parseFloat(cur.amount) + amt;
+    const useMeta = amt > parseFloat(cur.amount ?? 0) ? b : cur;
+    bySymbol.set(sym, { ...useMeta, amount: String(Number(total.toFixed(6))) });
+  }
+  return [...bySymbol.values()].sort((a, b) =>
+    String(a.token?.symbol || '').localeCompare(String(b.token?.symbol || '')),
+  );
+}
+
+/** Pick a token row with enough balance for transfers (uses raw Circle rows). */
+export function findTokenBalance(balances, symbol, requiredAmount = 0) {
+  const sym = String(symbol || '').toUpperCase();
+  const need = Number(requiredAmount) || 0;
+  const matches = balances.filter((b) => String(b.token?.symbol || '').toUpperCase() === sym);
+  if (!matches.length) return null;
+  return matches.find((b) => parseFloat(b.amount ?? 0) >= need)
+    ?? matches.sort((a, b) => parseFloat(b.amount ?? 0) - parseFloat(a.amount ?? 0))[0];
+}
+
+export async function getBalances(walletId) {
+  return mergeTokenBalances(await getRawBalances(walletId));
 }
 
 // Transfer a stablecoin (USDC/EURC) on Arc.

@@ -5,6 +5,34 @@ import { api } from '../lib/api';
 import { shortAddress } from '../lib/arc';
 import { Icon, TokenBadge } from './Icons';
 
+function findTokenBalance(balances, symbol, requiredAmount = 0) {
+  const sym = String(symbol || '').toUpperCase();
+  const need = Number(requiredAmount) || 0;
+  const matches = balances.filter((b) => String(b.token?.symbol || '').toUpperCase() === sym);
+  if (!matches.length) return null;
+  return matches.find((b) => parseFloat(b.amount ?? 0) >= need)
+    ?? matches.sort((a, b) => parseFloat(b.amount ?? 0) - parseFloat(a.amount ?? 0))[0];
+}
+
+function mergeBalancesForDisplay(balances = []) {
+  const bySymbol = new Map();
+  for (const b of balances) {
+    const sym = b.token?.symbol;
+    if (!sym) continue;
+    const amt = parseFloat(b.amount ?? 0) || 0;
+    const cur = bySymbol.get(sym);
+    if (!cur) {
+      bySymbol.set(sym, { ...b, amount: String(amt) });
+      continue;
+    }
+    bySymbol.set(sym, {
+      ...cur,
+      amount: String(parseFloat(cur.amount) + amt),
+    });
+  }
+  return [...bySymbol.values()];
+}
+
 export default function BalanceCard({ wallet, balances = [], personalAddress, peerWallets = [], onTx }) {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -13,14 +41,15 @@ export default function BalanceCard({ wallet, balances = [], personalAddress, pe
   const [token, setToken] = useState('USDC');
   const [amount, setAmount] = useState('');
 
-  const total = balances.reduce((s, b) => s + parseFloat(b.amount ?? 0), 0);
+  const displayBalances = mergeBalancesForDisplay(balances);
+  const total = displayBalances.reduce((s, b) => s + parseFloat(b.amount ?? 0), 0);
   const isPrimary = /primary/i.test(wallet.label ?? '');
   const isSavings = /savings/i.test(wallet.label ?? '');
   const savingsWallet = peerWallets.find((w) => /savings/i.test(w.label ?? ''));
   const treasuryWallet = peerWallets.find((w) => /primary/i.test(w.label ?? ''));
 
-  const tokenOptions = balances.length
-    ? [...new Set(balances.map((b) => b.token?.symbol).filter(Boolean))]
+  const tokenOptions = displayBalances.length
+    ? [...new Set(displayBalances.map((b) => b.token?.symbol).filter(Boolean))]
     : ['USDC', 'EURC'];
 
   async function copyAddress() {
@@ -30,10 +59,10 @@ export default function BalanceCard({ wallet, balances = [], personalAddress, pe
   }
 
   async function resolveTokenEntry() {
-    let tokEntry = balances.find((b) => b.token?.symbol === token);
+    let tokEntry = findTokenBalance(balances, token, Number(amount));
     if (!tokEntry?.token?.id) {
       const balanceResp = await api.walletBalances(wallet.id);
-      tokEntry = (balanceResp.balances ?? []).find((b) => b.token?.symbol === token);
+      tokEntry = findTokenBalance(balanceResp.balances ?? [], token, amount);
     }
     if (!tokEntry?.token?.id) throw new Error(`No ${token} balance in this wallet`);
     return tokEntry;
@@ -138,7 +167,7 @@ export default function BalanceCard({ wallet, balances = [], personalAddress, pe
         </div>
       </div>
 
-      {balances.length === 0 ? (
+      {displayBalances.length === 0 ? (
         <div className="rounded-lg bg-white/[0.02] border border-white/5 p-4 text-center mb-4">
           <div className="text-xs text-ink-400 mb-2">Wallet is empty</div>
           <a
@@ -152,7 +181,7 @@ export default function BalanceCard({ wallet, balances = [], personalAddress, pe
         </div>
       ) : (
         <ul className="space-y-2 mb-4">
-          {balances.map((b, i) => (
+          {displayBalances.map((b, i) => (
             <li key={i} className="flex items-center justify-between p-2.5 rounded-lg bg-white/[0.02] border border-white/5">
               <div className="flex items-center gap-2.5">
                 <TokenBadge symbol={b.token?.symbol} size={28} />
@@ -166,7 +195,7 @@ export default function BalanceCard({ wallet, balances = [], personalAddress, pe
         </ul>
       )}
 
-      {mode === null && balances.length > 0 && (
+      {mode === null && displayBalances.length > 0 && (
         <div className="grid grid-cols-1 gap-2">
           {isPrimary && savingsWallet && (
             <button

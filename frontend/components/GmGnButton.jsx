@@ -62,11 +62,11 @@ export default function GmGnButton({ onPing }) {
     }
   }
 
-  const base = 'rounded-full px-3 py-1.5 text-xs font-semibold border transition disabled:opacity-40 shadow-soft';
+  const base = 'rounded-lg px-2.5 py-1 text-[11px] font-semibold border transition disabled:opacity-40';
 
   return (
     <div
-      className="fixed bottom-5 right-5 z-50 flex items-center gap-2 p-1.5 rounded-2xl bg-ink-900/90 border border-white/10 backdrop-blur-md shadow-glow"
+      className="inline-flex items-center gap-1.5 p-1 rounded-xl bg-ink-900/60 border border-white/10 backdrop-blur-sm"
       title="Sign a tiny self-transfer on Arc testnet (MetaMask)"
     >
       {streak.streak > 0 && (

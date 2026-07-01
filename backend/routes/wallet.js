@@ -7,7 +7,7 @@ import {
   getTransactions, getTransaction,
 } from '../db/database.js';
 import {
-  getBalances, transfer, getTransaction as circleGetTx,
+  getBalances, getRawBalances, findTokenBalance, transfer, getTransaction as circleGetTx,
 } from '../services/circle.js';
 import { ensureWallets } from '../services/provision.js';
 import { buildFullTransactionList, mapCircleState } from '../services/transactionHistory.js';
@@ -108,8 +108,8 @@ router.post('/tx/:id/approve', txLimiter, async (req, res) => {
   if (!wallet) return res.status(404).json({ error: 'source wallet missing' });
 
   try {
-    const balances = await getBalances(wallet.circle_wallet_id);
-    const tokEntry = balances.find(b => b.token?.symbol === tx.token_symbol);
+    const balances = await getRawBalances(wallet.circle_wallet_id);
+    const tokEntry = findTokenBalance(balances, tx.token_symbol, tx.amount);
     if (!tokEntry) return res.status(400).json({ error: 'token no longer held' });
 
     const result = await transfer({

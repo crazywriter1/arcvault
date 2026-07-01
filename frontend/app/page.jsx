@@ -151,23 +151,20 @@ function Dashboard() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <span className={`pill border ${health?.status === 'ok' ? 'bg-good/10 text-good border-good/20' : 'bg-bad/10 text-bad border-bad/20'}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${health?.status === 'ok' ? 'bg-good animate-pulse-dot' : 'bg-bad'}`} />
             {health?.status === 'ok' ? 'Online' : 'Offline'}
           </span>
           {health?.arc_block && (
-            <span className="pill bg-white/5 text-ink-300 number">
+            <span className="pill bg-white/5 text-ink-300 number hidden sm:inline-flex">
               block {health.arc_block.toLocaleString()}
             </span>
           )}
-          <div className="ml-2">
-            <WalletConnectButton />
-          </div>
+          <GmGnButton onPing={refresh} />
+          <WalletConnectButton />
         </div>
       </header>
-
-      <GmGnButton onPing={refresh} />
 
       <section className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <TreasuryHealthCard refreshKey={insightsKey} />

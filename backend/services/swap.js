@@ -2,7 +2,7 @@
 // Leg 1: send from_token from source wallet to peer wallet.
 // Leg 2: send to_token from peer wallet back to source wallet.
 
-import { getBalances, transfer } from './circle.js';
+import { getBalances, getRawBalances, findTokenBalance, transfer } from './circle.js';
 import { getPairRate } from './fx.js';
 
 function findPeerWallet(wallets, sourceWallet) {
@@ -30,13 +30,13 @@ export async function executeSwap({ wallets, sourceWallet, fromToken, toToken, a
   const peer = findPeerWallet(wallets, sourceWallet);
   if (!peer) throw new Error('Need Treasury + Savings wallets for swap');
 
-  const srcBalances = await getBalances(sourceWallet.circle_wallet_id);
-  const peerBalances = await getBalances(peer.circle_wallet_id);
+  const srcBalances = await getRawBalances(sourceWallet.circle_wallet_id);
+  const peerBalances = await getRawBalances(peer.circle_wallet_id);
 
-  const fromEntry = srcBalances.find((b) => b.token?.symbol === quote.from);
+  const fromEntry = findTokenBalance(srcBalances, quote.from, quote.fromAmount);
   if (!fromEntry) throw new Error(`No ${quote.from} in ${sourceWallet.label}`);
 
-  const toEntry = peerBalances.find((b) => b.token?.symbol === quote.to);
+  const toEntry = findTokenBalance(peerBalances, quote.to, quote.toAmount);
   if (!toEntry) throw new Error(`${peer.label} has no ${quote.to} for swap liquidity`);
 
   const srcBal = parseFloat(fromEntry.amount ?? 0);

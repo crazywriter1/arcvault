@@ -6,7 +6,7 @@ import {
   insertTransaction, insertAlert, getWallets,
   getDistinctOwners,
 } from '../db/database.js';
-import { getBalances, transfer } from '../services/circle.js';
+import { getBalances, getRawBalances, findTokenBalance, transfer } from '../services/circle.js';
 import { getPairRate } from '../services/fx.js';
 
 function findWalletByLabel(wallets, label) {
@@ -103,8 +103,8 @@ export async function executeAction(rule, wallets, ownerAddress) {
     const fromWallet = findWalletByLabel(wallets, action.from) ?? wallets[0];
     if (!fromWallet) throw new Error('Source wallet not found');
 
-    const balances = await getBalances(fromWallet.circle_wallet_id);
-    const tok = balances.find(b => b.token?.symbol === (action.token ?? 'USDC'));
+    const balances = await getRawBalances(fromWallet.circle_wallet_id);
+    const tok = findTokenBalance(balances, action.token ?? 'USDC', action.amount);
     if (!tok) throw new Error(`Token ${action.token} not held in wallet`);
 
     let destAddress = action.to;
