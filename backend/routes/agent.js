@@ -8,9 +8,11 @@ import {
   getAlerts, markAlertsRead,
   getTransactions,
 } from '../db/database.js';
-import { parseCommand, generateReport, isCompleteRuleParams } from '../services/ai.js';
+import { parseCommand, generateReport, isCompleteRuleParams, formatBalanceSummary, inferLocalIntent, normalizeAction } from '../services/ai.js';
 import { getBalances, transfer } from '../services/circle.js';
 import { quoteSwap, executeSwap } from '../services/swap.js';
+import { ensureWallets } from '../services/provision.js';
+import { getBurnSpec, CCTP_DOMAINS } from '../services/cctp.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { chatLimiter } from '../middleware/rateLimits.js';
 
@@ -20,6 +22,12 @@ router.use(requireAuth);
 function findWalletByLabel(wallets, label) {
   const q = String(label || '').trim().toLowerCase();
   if (!q) return null;
+  if (q === 'treasury' || q === 'treasury primary' || q === 'primary') {
+    return wallets.find((w) => /primary|treasury/i.test(w.label || '')) ?? wallets[0];
+  }
+  if (q === 'savings') {
+    return wallets.find((w) => /savings/i.test(w.label || '')) ?? wallets[1] ?? wallets[0];
+  }
   return wallets.find((w) => String(w.label || '').toLowerCase() === q)
     || wallets.find((w) => String(w.label || '').toLowerCase().includes(q));
 }
@@ -37,6 +45,7 @@ router.post('/chat', chatLimiter, async (req, res) => {
   const { message } = req.body ?? {};
   if (!message) return res.status(400).json({ error: 'message required' });
 
+  await ensureWallets(req.ownerAddress);
   const wallets = getWallets(req.ownerAddress);
   const history = getChatHistory(req.ownerAddress, 10);
 
@@ -44,10 +53,24 @@ router.post('/chat', chatLimiter, async (req, res) => {
   insertChatMessage({ id: userMsgId, ownerAddress: req.ownerAddress, role: 'user', content: message });
 
   try {
-    const { parsed, raw } = await parseCommand(message, {
-      walletsContext: wallets,
-      chatHistory: history,
-    });
+    let parsed;
+    let raw = '';
+    try {
+      ({ parsed, raw } = await parseCommand(message, {
+        walletsContext: wallets,
+        chatHistory: history,
+      }));
+    } catch (llmErr) {
+      console.error('LLM parse failed, using local intent:', llmErr.message);
+      const local = inferLocalIntent(message);
+      parsed = normalizeAction(message, local ?? {
+        intent: 'chat',
+        summary: "I'm here to help with your treasury. Try: \"show my balance\", \"move 50 USDC to savings\", or \"swap 100 USDC to EURC\".",
+        requires_approval: false,
+        params: {},
+      }, history);
+      raw = parsed.summary ?? '';
+    }
 
     let finalAction = parsed;
     if (parsed.intent === 'rule_create' && isCompleteRuleParams(parsed.params)) {
@@ -73,6 +96,15 @@ router.post('/chat', chatLimiter, async (req, res) => {
     }
 
     const asstId = uuid();
+    const enrichment = await maybeEnrich(finalAction, wallets, req.ownerAddress);
+
+    if (enrichment?.balance_summary) {
+      finalAction = { ...finalAction, summary: enrichment.balance_summary };
+    }
+    if (enrichment?.bridge?.summary && finalAction.intent === 'bridge') {
+      finalAction = { ...finalAction, summary: enrichment.bridge.summary };
+    }
+
     insertChatMessage({
       id: asstId,
       ownerAddress: req.ownerAddress,
@@ -80,8 +112,6 @@ router.post('/chat', chatLimiter, async (req, res) => {
       content: finalAction.summary ?? raw,
       action_json: finalAction,
     });
-
-    const enrichment = await maybeEnrich(finalAction, wallets, req.ownerAddress);
 
     res.json({ id: asstId, action: finalAction, enrichment });
   } catch (err) {
@@ -93,6 +123,7 @@ router.post('/chat', chatLimiter, async (req, res) => {
 router.post('/execute', chatLimiter, async (req, res) => {
   const { action } = req.body ?? {};
   if (!action?.intent) return res.status(400).json({ error: 'action.intent required' });
+  await ensureWallets(req.ownerAddress);
   const wallets = getWallets(req.ownerAddress);
 
   try {
@@ -112,8 +143,8 @@ router.post('/execute', chatLimiter, async (req, res) => {
       return res.json({ status: 'rule_created', id });
     }
 
-    if (action.intent === 'transfer') {
-      const { token = 'USDC', amount, to, from = 'Treasury' } = action.params ?? {};
+    if (action.intent === 'transfer' || action.intent === 'move') {
+      const { token = 'USDC', amount, to, from = 'Treasury Primary' } = action.params ?? {};
       const srcWallet = findWalletByLabel(wallets, from) ?? wallets[0];
       if (!srcWallet) return res.status(400).json({ error: 'no source wallet' });
 
@@ -236,20 +267,73 @@ router.post('/alerts/read', (req, res) => {
 
 async function maybeEnrich(action, wallets, ownerAddress) {
   if (action.intent === 'balance_query') {
+    const filter = action.params?.wallet;
     const out = [];
     for (const w of wallets) {
+      if (filter && filter !== 'all' && !String(w.label || '').toLowerCase().includes(String(filter).toLowerCase())) {
+        continue;
+      }
       try {
         const balances = await getBalances(w.circle_wallet_id);
         out.push({
           label: w.label,
           address: w.address,
-          tokens: balances.map(b => ({ symbol: b.token?.symbol, amount: b.amount })),
+          tokens: balances.map((b) => ({ symbol: b.token?.symbol, amount: b.amount })),
         });
       } catch {
         out.push({ label: w.label, address: w.address, tokens: [], error: 'balance fetch failed' });
       }
     }
-    return { balances: out };
+    const balance_summary = formatBalanceSummary(out);
+    return { balances: out, balance_summary, total_wallets: out.length };
+  }
+
+  if (action.intent === 'bridge') {
+    const {
+      from_chain: fromChain = 'ethereum-sepolia',
+      to_chain: toChain = 'arc-testnet',
+      amount,
+    } = action.params ?? {};
+    try {
+      const spec = getBurnSpec({ fromChain, toChain });
+      const summary = [
+        `Bridge USDC: ${fromChain} → ${toChain}`,
+        amount ? `Amount: ${amount} USDC` : 'Amount: set in Bridge card',
+        '',
+        'Steps:',
+        '1. Open the Bridge card on your dashboard',
+        '2. Connect MetaMask on the source chain',
+        '3. Approve + burn USDC (CCTP)',
+        '4. Wait for attestation, then mint on destination',
+      ].join('\n');
+      return {
+        bridge: {
+          spec,
+          from_chain: fromChain,
+          to_chain: toChain,
+          amount,
+          summary,
+          chains: Object.keys(CCTP_DOMAINS),
+        },
+      };
+    } catch (err) {
+      return {
+        bridge_error: err.message,
+        bridge: {
+          summary: `Bridge setup unavailable: ${err.message}. Supported chains: ${Object.keys(CCTP_DOMAINS).join(', ')}`,
+          chains: Object.keys(CCTP_DOMAINS),
+        },
+      };
+    }
+  }
+
+  if (action.intent === 'transfer' || action.intent === 'move') {
+    const { token = 'USDC', amount, to, from = 'Treasury Primary' } = action.params ?? {};
+    const src = findWalletByLabel(wallets, from);
+    const dest = to?.startsWith('0x') ? to : findWalletByLabel(wallets, to)?.label ?? to;
+    return {
+      transfer_preview: { token, amount, from: src?.label ?? from, to: dest },
+    };
   }
 
   if (action.intent === 'report') {

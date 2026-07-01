@@ -12,7 +12,7 @@ Your job is to understand ANY user message — commands, questions, casual chat,
 
 Your response MUST be a single JSON object inside a \`\`\`json code block:
 {
-  "intent": "transfer" | "rule_create" | "balance_query" | "swap" | "report" | "clarify" | "chat",
+  "intent": "transfer" | "move" | "rule_create" | "balance_query" | "swap" | "bridge" | "report" | "clarify" | "chat",
   "summary": "Human-readable reply in English only",
   "requires_approval": true | false,
   "params": { ... }
@@ -22,9 +22,18 @@ Your response MUST be a single JSON object inside a \`\`\`json code block:
 INTENT SCHEMAS
 ════════════════════════════════════════
 
-"transfer" — send USDC or EURC
-  params: { "token": "USDC"|"EURC", "amount": number, "to": "0x..."|"Savings"|"Treasury", "from": "Treasury" (default), "memo": string (optional) }
-  Examples: "send 100 USDC to savings", "transfer 50 USDC from treasury to savings", "move 200 USDC"
+"transfer" — send USDC or EURC (same as "move")
+  params: { "token": "USDC"|"EURC", "amount": number, "to": "0x..."|"Savings"|"Treasury Primary", "from": "Treasury Primary" (default), "memo": string (optional) }
+  Examples: "send 100 USDC to savings", "move 50 USDC from treasury to savings", "transfer 200 USDC to 0xabc..."
+
+"move" — alias for transfer between Treasury and Savings
+  params: same as transfer
+  Examples: "move 100 USDC to savings", "move funds to treasury"
+
+"bridge" — cross-chain USDC via CCTP (user signs in MetaMask on source chain)
+  params: { "from_chain": "ethereum-sepolia"|"base-sepolia"|"arbitrum-sepolia"|"polygon-amoy"|"arc-testnet", "to_chain": "arc-testnet"|..., "token": "USDC", "amount": number (optional) }
+  Examples: "bridge USDC from ethereum to arc", "cross-chain transfer to arc testnet"
+  Note: bridge requires wallet signatures — provide clear steps, not auto-execute.
 
 "rule_create" — automation rule
   params: {
@@ -67,7 +76,7 @@ RULES
 - Transfer > 1000 USDC/EURC → requires_approval = true.
 - Rule creation → requires_approval = true.
 - Swap ≤ 1000 → requires_approval = false. Swap > 1000 → requires_approval = true.
-- Balance query, report, chat → requires_approval = false.
+- Balance query, report, bridge info, chat → requires_approval = false.
 - Default source wallet for one-off transfers: "Treasury Primary".
 - If amount or destination is missing for one-off transfer, use intent "clarify".
 - NEVER say you can only create one rule at a time. Create the rule the user asked for in this message.
@@ -84,20 +93,195 @@ RULES
 Return ONLY the JSON code block. No extra text outside the block.`;
 
 function extractJson(text) {
-  const match = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/(\{[\s\S]*\})/);
-  const raw = match ? match[1] : text;
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return { intent: 'chat', summary: text.slice(0, 200), requires_approval: false, params: { reply: text } };
+  if (!text?.trim()) {
+    return { intent: 'chat', summary: 'How can I help with your treasury today?', requires_approval: false, params: {} };
   }
+  const fenced = text.match(/```json\s*([\s\S]*?)\s*```/);
+  if (fenced) {
+    try { return JSON.parse(fenced[1]); } catch { /* fall through */ }
+  }
+  const obj = text.match(/\{[\s\S]*\}/);
+  if (obj) {
+    try { return JSON.parse(obj[0]); } catch { /* fall through */ }
+  }
+  return { intent: 'chat', summary: text.trim().slice(0, 600), requires_approval: false, params: { reply: text.trim() } };
 }
 
 const FRIDAY_CRON = '0 9 * * 5';
+const OPERATIONAL_INTENTS = new Set(['balance_query', 'transfer', 'move', 'swap', 'bridge', 'report', 'rule_create']);
+
+const CHAIN_ALIASES = {
+  ethereum: 'ethereum-sepolia',
+  eth: 'ethereum-sepolia',
+  sepolia: 'ethereum-sepolia',
+  base: 'base-sepolia',
+  arbitrum: 'arbitrum-sepolia',
+  polygon: 'polygon-amoy',
+  amoy: 'polygon-amoy',
+  arc: 'arc-testnet',
+  fuji: 'avalanche-fuji',
+  avalanche: 'avalanche-fuji',
+};
+
+function extractTokenAmount(text) {
+  const m = String(text).match(/(\d+(?:\.\d+)?)\s*(USDC|EURC)/i);
+  if (m) return { amount: Number(m[1]), token: m[2].toUpperCase() };
+  const n = String(text).match(/\b(\d+(?:\.\d+)?)\b/);
+  if (n) return { amount: Number(n[1]), token: 'USDC' };
+  return null;
+}
 
 function extractUsdcAmount(text) {
-  const m = String(text).match(/(\d+(?:\.\d+)?)\s*usdc/i);
-  return m ? Number(m[1]) : null;
+  const t = extractTokenAmount(text);
+  return t?.token === 'USDC' ? t.amount : extractTokenAmount(text)?.amount ?? null;
+}
+
+function isBalanceQuery(text) {
+  return /\b(balances?|how much|what(?:'?s| is) in|show (?:my |me )?(?:wallet )?balance|check (?:my )?(?:wallet )?balance|my funds|what do i have|total (?:balance|funds)|wallet balance)\b/i.test(text);
+}
+
+function isSwapQuery(text) {
+  return /\b(swap|convert|exchange)\b/i.test(text) && /\b(USDC|EURC)\b/i.test(text);
+}
+
+function isBridgeQuery(text) {
+  return /\b(bridge|cross[\s-]?chain|cctp)\b/i.test(text);
+}
+
+function isTransferQuery(text) {
+  return /\b(send|transfer|move|pay)\b/i.test(text)
+    && (/\d/.test(text) || /\b(savings|treasury|0x[a-f0-9]{6,})\b/i.test(text));
+}
+
+function isReportQuery(text) {
+  return /\b(report|cashflow|transaction history|last \d+ days|monthly summary)\b/i.test(text);
+}
+
+function detectChain(text, fallback = null) {
+  const t = String(text).toLowerCase();
+  for (const [alias, chain] of Object.entries(CHAIN_ALIASES)) {
+    if (new RegExp(`\\b${alias}\\b`).test(t)) return chain;
+  }
+  return fallback;
+}
+
+function detectBridgeChains(text) {
+  const route = String(text).match(/\bfrom\s+([a-z0-9-]+)\s+to\s+([a-z0-9-]+)\b/i);
+  if (route) {
+    return {
+      from_chain: detectChain(route[1], route[1].toLowerCase()),
+      to_chain: detectChain(route[2], route[2].toLowerCase()),
+    };
+  }
+  const toArc = /\bto\s+arc\b/i.test(text) || /\bon\s+arc\b/i.test(text);
+  const fromArc = /\bfrom\s+arc\b/i.test(text);
+  if (toArc) return { from_chain: detectChain(text, 'ethereum-sepolia'), to_chain: 'arc-testnet' };
+  if (fromArc) return { from_chain: 'arc-testnet', to_chain: detectChain(text, 'ethereum-sepolia') };
+  return { from_chain: detectChain(text, 'ethereum-sepolia'), to_chain: 'arc-testnet' };
+}
+
+function parseSwapParams(text) {
+  const m = String(text).match(/(\d+(?:\.\d+)?)\s*(USDC|EURC)\s+(?:to|into|for)\s+(USDC|EURC)/i);
+  if (!m) return null;
+  const from = m[2].toUpperCase();
+  const to = m[3].toUpperCase();
+  if (from === to) return null;
+  return { from_token: from, to_token: to, amount: Number(m[1]), wallet: 'Treasury Primary' };
+}
+
+function extractAddress(text) {
+  const m = String(text).match(/(0x[a-fA-F0-9]{40})/);
+  return m ? m[1] : null;
+}
+
+export function inferLocalIntent(userMessage) {
+  const text = String(userMessage || '').trim();
+  if (!text) return null;
+
+  if (isBalanceQuery(text)) {
+    const wallet = /\bsavings\b/i.test(text) ? 'Savings'
+      : /\btreasury\b/i.test(text) ? 'Treasury Primary' : 'all';
+    return {
+      intent: 'balance_query',
+      requires_approval: false,
+      summary: wallet === 'all' ? 'Here are your current wallet balances:' : `Balance for ${wallet}:`,
+      params: { wallet },
+    };
+  }
+
+  if (isBridgeQuery(text)) {
+    const { from_chain, to_chain } = detectBridgeChains(text);
+    const amt = extractTokenAmount(text);
+    return {
+      intent: 'bridge',
+      requires_approval: false,
+      summary: `Cross-chain bridge: ${from_chain} → ${to_chain}. You'll sign in your wallet — see steps below.`,
+      params: {
+        from_chain,
+        to_chain,
+        token: 'USDC',
+        amount: amt?.amount,
+      },
+    };
+  }
+
+  if (isSwapQuery(text)) {
+    const swap = parseSwapParams(text);
+    if (swap) {
+      const needsApproval = swap.amount > 1000;
+      return {
+        intent: 'swap',
+        requires_approval: needsApproval,
+        summary: `Swap ${swap.amount} ${swap.from_token} → ${swap.to_token} at live FX rate.`,
+        params: swap,
+      };
+    }
+  }
+
+  if (isTransferQuery(text) && !isScheduleRule(text) && !isThresholdAlert(text)) {
+    const tok = extractTokenAmount(text) || { amount: null, token: 'USDC' };
+    const { from, to } = inferTransferWallets(text);
+    const addr = extractAddress(text);
+    const destination = addr || to;
+    if (tok.amount && destination) {
+      const needsApproval = tok.amount > 1000;
+      return {
+        intent: 'transfer',
+        requires_approval: needsApproval,
+        summary: `Transfer ${tok.amount} ${tok.token} from ${from} to ${destination}.`,
+        params: { token: tok.token, amount: tok.amount, from, to: destination },
+      };
+    }
+  }
+
+  if (isReportQuery(text)) {
+    const days = Number(String(text).match(/last\s+(\d+)\s+days/i)?.[1] || 30);
+    return {
+      intent: 'report',
+      requires_approval: false,
+      summary: `Cashflow report for the last ${days} days:`,
+      params: { period_days: days, type: 'cashflow' },
+    };
+  }
+
+  return null;
+}
+
+export function formatBalanceSummary(balances = []) {
+  if (!balances.length) {
+    return 'No treasury wallets found yet. Tap Setup Treasury on the dashboard to create your managed wallets.';
+  }
+  const lines = balances.map((w) => {
+    const tok = w.tokens?.length
+      ? w.tokens.map((t) => `${parseFloat(t.amount || 0).toFixed(2)} ${t.symbol}`).join(', ')
+      : '0.00 USDC';
+    return `• ${w.label}: ${tok}`;
+  });
+  const total = balances.reduce(
+    (sum, w) => sum + (w.tokens ?? []).reduce((s, t) => s + parseFloat(t.amount || 0), 0),
+    0,
+  );
+  return `Your balances (total ~$${total.toFixed(2)}):\n${lines.join('\n')}`;
 }
 
 function isScheduleRule(text) {
@@ -150,7 +334,41 @@ export function isCompleteRuleParams(params) {
 
 export function normalizeAction(userMessage, parsed, chatHistory = []) {
   const context = buildUserContext(userMessage, chatHistory);
+  const local = inferLocalIntent(userMessage);
   const action = { ...parsed, params: { ...(parsed.params || {}) } };
+
+  // Local parser wins when LLM missed an operational command.
+  if (local?.intent && OPERATIONAL_INTENTS.has(local.intent)) {
+    const llmMissed = !OPERATIONAL_INTENTS.has(action.intent) || action.intent === 'clarify';
+    if (llmMissed || (local.intent === 'balance_query' && action.intent !== 'balance_query')) {
+      action.intent = local.intent;
+      action.requires_approval = local.requires_approval ?? false;
+      action.summary = local.summary || action.summary;
+      action.params = { ...local.params, ...action.params };
+    }
+  }
+
+  // move → transfer for execution pipeline
+  if (action.intent === 'move') action.intent = 'transfer';
+
+  // Normalize wallet labels in params
+  if (action.params?.from) {
+    action.params.from = String(action.params.from).replace(/^treasury$/i, 'Treasury Primary');
+  }
+  if (action.params?.to && !String(action.params.to).startsWith('0x')) {
+    action.params.to = String(action.params.to).replace(/^treasury$/i, 'Treasury Primary');
+  }
+
+  // Chat / clarify — always show a readable reply
+  if (action.intent === 'chat') {
+    action.summary = action.summary || action.params?.reply
+      || "I'm your ArcVault treasury agent. I can show balances, move funds, swap USDC/EURC, bridge cross-chain, and set automation rules.";
+    action.requires_approval = false;
+  }
+  if (action.intent === 'clarify' && action.params?.question && !action.summary) {
+    action.summary = action.params.question;
+  }
+
   const amount = extractUsdcAmount(context) || extractUsdcAmount(userMessage);
   const wantsSchedule = isScheduleRule(context);
   const wantsAlert = isThresholdAlert(context);
