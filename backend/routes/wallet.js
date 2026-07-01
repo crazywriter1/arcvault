@@ -9,6 +9,7 @@ import {
 import {
   getBalances, transfer, getTransaction as circleGetTx,
 } from '../services/circle.js';
+import { ensureWallets } from '../services/provision.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { txLimiter } from '../middleware/rateLimits.js';
 
@@ -32,6 +33,7 @@ router.get('/:id/balances', async (req, res) => {
 });
 
 router.get('/balances/all', async (req, res) => {
+  await ensureWallets(req.ownerAddress);
   const wallets = getWallets(req.ownerAddress);
   const out = [];
   for (const w of wallets) {

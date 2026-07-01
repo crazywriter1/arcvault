@@ -80,7 +80,6 @@ function Dashboard() {
         api.health(),
       ]);
       const txsRaw = t.transactions ?? [];
-      // Keep tx status fresh so "submitted but not received" is visible as confirmed/failed quickly.
       const pendingSync = txsRaw
         .filter((x) => x.status === 'submitted' && x.circle_tx_id)
         .slice(0, 5);
@@ -88,7 +87,9 @@ function Dashboard() {
         await Promise.all(pendingSync.map((x) => api.syncTx(x.id).catch(() => null)));
       }
       const t2 = await api.listTxs();
-      setWallets(b.wallets ?? []);
+      const nextWallets = b.wallets ?? [];
+      // Keep last known wallets if a cold serverless instance briefly returns empty.
+      setWallets((prev) => (nextWallets.length ? nextWallets : prev));
       setTxs(t2.transactions ?? txsRaw);
       setRules(r.rules ?? []);
       setHealth(h);
@@ -119,7 +120,7 @@ function Dashboard() {
       await refresh();
       setMounted(true);
     })();
-    const iv = setInterval(refresh, 20000);
+    const iv = setInterval(refresh, 60000);
     return () => clearInterval(iv);
   }, []);
 
