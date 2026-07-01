@@ -81,7 +81,7 @@ function Dashboard() {
       ]);
       const txsRaw = t.transactions ?? [];
       const pendingSync = txsRaw
-        .filter((x) => x.status === 'submitted' && x.circle_tx_id)
+        .filter((x) => x.status === 'submitted' && x.circle_tx_id && !x.remote)
         .slice(0, 5);
       if (pendingSync.length) {
         await Promise.all(pendingSync.map((x) => api.syncTx(x.id).catch(() => null)));
@@ -90,7 +90,10 @@ function Dashboard() {
       const nextWallets = b.wallets ?? [];
       // Keep last known wallets if a cold serverless instance briefly returns empty.
       setWallets((prev) => (nextWallets.length ? nextWallets : prev));
-      setTxs(t2.transactions ?? txsRaw);
+      setTxs((prev) => {
+        const next = t2.transactions ?? txsRaw;
+        return next.length ? next : prev;
+      });
       setRules(r.rules ?? []);
       setHealth(h);
       setInsightsKey((k) => k + 1);

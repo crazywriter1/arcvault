@@ -15,6 +15,7 @@ const SOURCE_ICON = {
   user: '👤',
   ai: '✦',
   rule: '⚙',
+  wallet: '💳',
 };
 
 export default function TransactionList({ txs = [], onChange }) {
@@ -47,7 +48,7 @@ export default function TransactionList({ txs = [], onChange }) {
                 <span className={`pill border ${status.cls}`}>{status.label}</span>
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="number text-sm font-medium text-ink-100">
-                    {parseFloat(tx.amount).toFixed(2)} {tx.token_symbol}
+                    {parseFloat(tx.amount || 0).toFixed(2)} {tx.token_symbol || 'USDC'}
                   </span>
                   <Icon.ArrowUpRight className="w-3 h-3 text-ink-400 flex-shrink-0" />
                   <span className="number text-xs text-ink-300 truncate">{short(tx.destination)}</span>
@@ -64,7 +65,7 @@ export default function TransactionList({ txs = [], onChange }) {
                     </button>
                   </>
                 )}
-                {tx.status === 'submitted' && (
+                {tx.status === 'submitted' && !tx.remote && (
                   <button onClick={() => sync(tx.id)} className="btn-ghost !px-2 !py-1">
                     <Icon.Refresh className="w-3 h-3" />
                   </button>

@@ -10,6 +10,7 @@ import {
   getBalances, transfer, getTransaction as circleGetTx,
 } from '../services/circle.js';
 import { ensureWallets } from '../services/provision.js';
+import { buildFullTransactionList, mapCircleState } from '../services/transactionHistory.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { txLimiter } from '../middleware/rateLimits.js';
 
@@ -132,8 +133,18 @@ router.post('/tx/:id/reject', (req, res) => {
   res.json({ id: tx.id, status: 'rejected' });
 });
 
-router.get('/tx/list', (req, res) => {
-  res.json({ transactions: getTransactions(req.ownerAddress, { limit: 100 }) });
+router.get('/tx/list', async (req, res) => {
+  try {
+    await ensureWallets(req.ownerAddress);
+    const transactions = await buildFullTransactionList({
+      ownerAddress: req.ownerAddress,
+      getTransactions,
+      getWallets,
+    });
+    res.json({ transactions });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 router.post('/tx/:id/sync', async (req, res) => {
@@ -148,14 +159,5 @@ router.post('/tx/:id/sync', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
-function mapCircleState(state) {
-  switch ((state || '').toUpperCase()) {
-    case 'COMPLETE': case 'CONFIRMED': return 'confirmed';
-    case 'FAILED': case 'CANCELLED': case 'DENIED': return 'failed';
-    case 'INITIATED': case 'PENDING_RISK_SCREENING': case 'QUEUED': case 'SENT': return 'submitted';
-    default: return 'submitted';
-  }
-}
 
 export default router;
