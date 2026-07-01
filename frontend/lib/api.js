@@ -1,7 +1,9 @@
 // Thin client for backend API. Auth uses httpOnly cookie sessions.
-const API_BASE = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/+$/, '');
+// Browser: same-origin /api/* (Next.js rewrite → backend). Avoids CORS on Vercel.
+const DIRECT_API = (process.env.NEXT_PUBLIC_API_BASE_URL || '').replace(/\/+$/, '');
 function withBase(path) {
-  return API_BASE ? `${API_BASE}${path}` : path;
+  if (typeof window !== 'undefined' && DIRECT_API) return path;
+  return DIRECT_API ? `${DIRECT_API}${path}` : path;
 }
 
 async function j(res) {
