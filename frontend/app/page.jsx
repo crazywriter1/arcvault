@@ -137,8 +137,8 @@ function Dashboard() {
   const managedWallets = wallets.map((w) => w.wallet);
 
   return (
-    <main className="min-h-screen px-6 py-8 max-w-7xl mx-auto">
-      <header className="flex items-center justify-between mb-8 pb-6 border-b border-white/5">
+    <main className="min-h-screen px-6 py-8 max-w-7xl mx-auto flex flex-col gap-6">
+      <header className="flex items-center justify-between pb-6 border-b border-white/5">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-brand to-brand-soft flex items-center justify-center shadow-glow">
             <Icon.Wallet className="w-5 h-5 text-ink-950" />
@@ -169,12 +169,12 @@ function Dashboard() {
 
       <GmGnButton onPing={refresh} />
 
-      <section className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-6">
+      <section className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <TreasuryHealthCard refreshKey={insightsKey} />
         <ActivityFeed refreshKey={insightsKey} />
       </section>
 
-      <section className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+      <section className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {!mounted ? (
           <>
             <StatCardSkeleton />
@@ -200,7 +200,7 @@ function Dashboard() {
         </div>
       )}
 
-      <section className="mb-6">
+      <section className="order-2 lg:order-1">
         <div className="flex items-end justify-between mb-3">
           <div>
             <h2 className="text-sm font-semibold text-ink-100">Your Wallets</h2>
@@ -238,8 +238,12 @@ function Dashboard() {
         </div>
       </section>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 mb-6">
-        <section className="lg:col-span-2 space-y-5">
+      <div className="order-1 lg:order-2 grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+        <section className="lg:col-span-1 lg:col-start-3 lg:row-start-1 sticky top-3 z-20 self-start w-full h-[min(420px,calc(100dvh-1.5rem))] lg:h-[min(680px,calc(100dvh-2rem))]">
+          <ChatInterface onActionExecuted={refresh} />
+        </section>
+
+        <section className="lg:col-span-2 lg:col-start-1 lg:row-start-1 space-y-5">
           <BridgeCard treasuryWallet={treasury} />
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <PayrollSimulator onCreated={refresh} />
@@ -261,13 +265,9 @@ function Dashboard() {
             <TransactionList txs={txs.slice(0, 20)} onChange={refresh} />
           </div>
         </section>
-
-        <section className="lg:col-span-1 h-[720px] sticky top-6">
-          <ChatInterface onActionExecuted={refresh} />
-        </section>
       </div>
 
-      <footer className="mt-10 pt-6 border-t border-white/5 flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-[11px] text-ink-500">
+      <footer className="pt-6 border-t border-white/5 flex flex-col md:flex-row md:items-center md:justify-between gap-2 text-[11px] text-ink-500">
         <div>ArcVault · built on Arc Network · chain ID 5042002</div>
         <div className="flex items-center gap-4">
           <a href="https://docs.arc.network" target="_blank" rel="noopener noreferrer" className="hover:text-brand transition">Arc Docs</a>
