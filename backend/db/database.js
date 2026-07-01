@@ -6,7 +6,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, 'arcvault.db');
+// Vercel serverless: only /tmp is writable; data is ephemeral between cold starts.
+const dbPath = process.env.VERCEL === '1'
+  ? path.join('/tmp', 'arcvault.db')
+  : path.join(__dirname, 'arcvault.db');
 
 export const db = new DatabaseSync(dbPath);
 

@@ -4,6 +4,9 @@
   "description": "ArcVault AI Treasury Agent Backend",
   "type": "module",
   "main": "server.js",
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "start": "node --no-warnings server.js",
     "dev": "node --no-warnings --watch server.js",
