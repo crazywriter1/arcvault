@@ -1,0 +1,32 @@
+{
+  "name": "arcvault-backend",
+  "version": "0.1.0",
+  "description": "ArcVault AI Treasury Agent Backend",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --no-warnings server.js",
+    "dev": "node --no-warnings --watch server.js",
+    "init-entity": "node --no-warnings scripts/init-entity-secret.js",
+    "init-wallet": "node --no-warnings scripts/init-wallet.js",
+    "lint": "eslint . --ext .js",
+    "test": "SESSION_SECRET=test-session-secret node --test"
+  },
+  "dependencies": {
+    "@circle-fin/developer-controlled-wallets": "^8.1.0",
+    "@google/generative-ai": "^0.21.0",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "ethers": "^6.13.4",
+    "express": "^4.21.1",
+    "express-rate-limit": "^8.4.0",
+    "node-cron": "^3.0.3",
+    "uuid": "^11.0.3"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.1",
+    "eslint": "^9.25.1",
+    "globals": "^15.15.0"
+  }
+}

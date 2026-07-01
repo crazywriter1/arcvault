@@ -1,0 +1,84 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html, body {
+  background: #07070b;
+  color: #e8e8ef;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  background-image:
+    radial-gradient(1200px 600px at 50% -200px, rgba(0,217,255,0.08), transparent 60%),
+    radial-gradient(800px 400px at 100% 100%, rgba(0,217,255,0.04), transparent 60%);
+  background-attachment: fixed;
+  min-height: 100vh;
+}
+
+/* Subtle grid overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+  background-size: 48px 48px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+main, header, footer { position: relative; z-index: 1; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1e1e2a; border-radius: 8px; border: 2px solid #07070b; }
+::-webkit-scrollbar-thumb:hover { background: #2a2a38; }
+
+/* Utility: shimmering accent border on hover */
+.card {
+  background: linear-gradient(180deg, rgba(22,22,31,0.8), rgba(14,14,20,0.8));
+  border: 1px solid rgba(255,255,255,0.06);
+  backdrop-filter: blur(12px);
+  border-radius: 14px;
+  transition: border-color 0.2s ease, transform 0.2s ease;
+}
+.card:hover { border-color: rgba(0,217,255,0.25); }
+
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg text-sm font-medium transition-all;
+  @apply disabled:opacity-40 disabled:cursor-not-allowed;
+}
+.btn-primary {
+  @apply btn px-4 py-2 bg-brand text-ink-950 hover:bg-brand-glow;
+  box-shadow: 0 4px 16px -4px rgba(0,217,255,0.4);
+}
+.btn-ghost {
+  @apply btn px-3 py-1.5 text-ink-200 hover:bg-white/5 border border-white/5;
+}
+.btn-good { @apply btn px-2.5 py-1 text-xs bg-good/15 text-good hover:bg-good/25 border border-good/20; }
+.btn-bad  { @apply btn px-2.5 py-1 text-xs bg-bad/15 text-bad hover:bg-bad/25 border border-bad/20; }
+
+.pill {
+  @apply inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium;
+}
+
+input[type="text"], input:not([type]) {
+  color-scheme: dark;
+}
+
+.number {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}

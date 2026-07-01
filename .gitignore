@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.local
+*.db
+*.db-journal
+output/
+recovery_file*.dat
+*.dat
+.claude/
+.next/
+dist/
+build/
+*.log
+.DS_Store
