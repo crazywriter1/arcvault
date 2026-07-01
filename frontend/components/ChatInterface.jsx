@@ -169,7 +169,7 @@ function MessageBubble({ message, onExecute }) {
               <div key={i} className="flex items-center justify-between py-1 px-2 rounded bg-black/20">
                 <span className="text-ink-300">{w.label}</span>
                 <span className="number text-ink-200">
-                  {w.tokens.length ? w.tokens.map(t => `${parseFloat(t.amount).toFixed(2)} ${t.symbol}`).join(' · ') : 'boş'}
+                  {w.tokens.length ? w.tokens.map(t => `${parseFloat(t.amount).toFixed(2)} ${t.symbol}`).join(' · ') : 'empty'}
                 </span>
               </div>
             ))}

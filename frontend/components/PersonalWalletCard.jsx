@@ -9,7 +9,7 @@ import { api } from '../lib/api';
 import { Icon, TokenBadge } from './Icons';
 
 export default function PersonalWalletCard({ treasuryWallet, onTx }) {
-  const { address, isOnArc, eth, walletName } = useWallet();
+  const { address, isOnArc, eth, walletName, switchToArc } = useWallet();
   const [balances, setBalances] = useState({ USDC: '0', EURC: '0' });
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState(null);
@@ -41,11 +41,27 @@ export default function PersonalWalletCard({ treasuryWallet, onTx }) {
     setTimeout(() => setStatus(null), 1200);
   }
 
+  async function setupTreasury() {
+    setBusy(true);
+    setStatus('Setting up Treasury wallets…');
+    try {
+      const res = await api.provision();
+      if (res.error) throw new Error(res.error);
+      setStatus('Treasury ready — you can deposit now');
+      onTx?.();
+    } catch (err) {
+      setStatus(`Setup failed: ${err?.message || 'unknown error'}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function doDeposit() {
-    if (!treasuryWallet?.address) { setStatus('Treasury wallet missing'); return; }
+    if (!treasuryWallet?.address) { setStatus('Treasury wallet missing — tap Setup Treasury'); return; }
     if (!eth) { setStatus('No wallet connected'); return; }
     setBusy(true); setStatus(null);
     try {
+      if (!isOnArc) await switchToArc();
       const provider = new BrowserProvider(eth);
       const signer = await provider.getSigner();
       const tok = TOKENS[token];
@@ -154,12 +170,23 @@ export default function PersonalWalletCard({ treasuryWallet, onTx }) {
       </ul>
 
       {/* Action buttons */}
-      {mode === null && (
+      {mode === null && !treasuryWallet && (
+        <div className="rounded-lg border border-warn/30 bg-warn/10 p-3 space-y-2">
+          <p className="text-xs text-warn leading-relaxed">
+            Treasury wallets are not set up yet. Circle must create your managed Treasury + Savings wallets before deposit/withdraw.
+          </p>
+          <button onClick={setupTreasury} disabled={busy} className="btn-primary w-full">
+            {busy ? 'Setting up…' : 'Setup Treasury'}
+          </button>
+        </div>
+      )}
+
+      {mode === null && treasuryWallet && (
         <div className="grid grid-cols-2 gap-2">
-          <button onClick={() => setMode('deposit')} disabled={!treasuryWallet} className="btn bg-brand/15 text-brand border border-brand/25 hover:bg-brand/25 px-3 py-2">
+          <button onClick={() => setMode('deposit')} className="btn bg-brand/15 text-brand border border-brand/25 hover:bg-brand/25 px-3 py-2">
             <Icon.ArrowUpRight className="w-4 h-4 rotate-90" /> Deposit
           </button>
-          <button onClick={() => setMode('withdraw')} disabled={!treasuryWallet} className="btn-ghost">
+          <button onClick={() => setMode('withdraw')} className="btn-ghost">
             <Icon.ArrowUpRight className="w-4 h-4 -rotate-90" /> Withdraw
           </button>
         </div>

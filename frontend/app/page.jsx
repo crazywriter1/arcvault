@@ -68,6 +68,7 @@ function Dashboard() {
   const [health, setHealth] = useState(null);
   const [mounted, setMounted] = useState(false);
   const [provisioning, setProvisioning] = useState(false);
+  const [provisionError, setProvisionError] = useState(null);
   const [insightsKey, setInsightsKey] = useState(0);
 
   async function refresh() {
@@ -101,10 +102,15 @@ function Dashboard() {
     (async () => {
       // Ensure user is provisioned (creates wallet set + 2 wallets on first call).
       setProvisioning(true);
+      setProvisionError(null);
       try {
         const me = await api.me();
-        if (me.error) console.error('provision:', me.error);
+        if (me.error) {
+          setProvisionError(me.error);
+          console.error('provision:', me.error);
+        }
       } catch (e) {
+        setProvisionError(e.message);
         console.error('provision failed:', e);
       } finally {
         setProvisioning(false);
@@ -183,6 +189,12 @@ function Dashboard() {
       </section>
 
       <AlertBanner />
+
+      {provisionError && (
+        <div className="mb-4 rounded-lg border border-bad/30 bg-bad/10 px-4 py-3 text-sm text-bad">
+          Treasury setup failed: {provisionError}. Use &quot;Setup Treasury&quot; on Personal Wallet or retry in a minute.
+        </div>
+      )}
 
       <section className="mb-6">
         <div className="flex items-end justify-between mb-3">
