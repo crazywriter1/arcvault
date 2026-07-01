@@ -260,7 +260,9 @@ async function maybeEnrich(action, wallets, ownerAddress) {
       try {
         const b = await getBalances(w.circle_wallet_id);
         balancesByWallet.push({ wallet: w.label, tokens: b.map(x => ({ symbol: x.token?.symbol, amount: x.amount })) });
-      } catch {}
+      } catch {
+        balancesByWallet.push({ wallet: w.label, tokens: [] });
+      }
     }
     const report = await generateReport({ transactions: txs, balances: balancesByWallet, periodDays: period });
     return { report };

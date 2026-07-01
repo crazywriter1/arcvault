@@ -85,7 +85,7 @@ router.post('/presets/payroll', (req, res) => {
   if (!Number.isFinite(amt) || amt <= 0) {
     return res.status(400).json({ error: 'invalid amount' });
   }
-  const day = Math.min(28, Math.max(1, Number(day_of_month) || 1));
+  const day = Math.min(28, Math.max(1, Number(dayOfMonth) || 1));
 
   const id = uuid();
   insertRule({
